@@ -45,6 +45,9 @@ if uploaded_excel:
     df = pd.read_excel(uploaded_excel, dtype=str).fillna("")
     st.session_state.data = df
 
+    # Reset index each time new Excel uploaded
+    st.session_state.current_index = 0
+
     # Resume from log if provided
     if uploaded_log:
         log_df = pd.read_csv(uploaded_log) if uploaded_log.name.endswith(".csv") else None
@@ -57,9 +60,20 @@ if uploaded_excel:
                 elif act.startswith("SKIPPED"):
                     st.session_state.skipped_records.add(cons)
             st.session_state.log_data = log_df.to_dict("records")
-            st.success("✅ Progress resumed from uploaded log file.")
 
-    jump_to_next_unprocessed()
+            # ✅ Set pointer to next unprocessed record automatically
+            st.session_state.current_index = 0
+            jump_to_next_unprocessed()
+            st.success("✅ Progress resumed from uploaded log file. Continuing from next unprocessed record.")
+        else:
+            st.warning("⚠️ Invalid log file format. Could not resume progress.")
+    else:
+        # Start fresh if no log
+        st.session_state.done_records.clear()
+        st.session_state.skipped_records.clear()
+        st.session_state.log_data = []
+        st.session_state.current_index = 0
+
     df = st.session_state.data
     total = len(df)
     done = len(st.session_state.done_records)
@@ -68,6 +82,8 @@ if uploaded_excel:
     st.markdown(f"### Summary: Total {total} | ✅ Done {done} | ⏭ Skipped {skipped}")
     st.markdown("---")
 
+    # Completion check
+    jump_to_next_unprocessed()
     if st.session_state.current_index >= len(df):
         st.success("🎉 Job Completed Successfully!")
         csv_data = pd.DataFrame(st.session_state.log_data).to_csv(index=False)
@@ -113,7 +129,14 @@ if uploaded_excel:
             if st.button("⬅ Previous Record", use_container_width=True):
                 if st.session_state.current_index > 0:
                     st.session_state.current_index -= 1
+                    # jump to previous visible (unprocessed) record
+                    while st.session_state.current_index > 0:
+                        cons_no = str(df.iloc[st.session_state.current_index].get("CONS_NO", f"Row{st.session_state.current_index+1}"))
+                        if cons_no not in st.session_state.done_records and cons_no not in st.session_state.skipped_records:
+                            break
+                        st.session_state.current_index -= 1
                     st.rerun()
+
         with col2:
             if st.button("✅ Mark as Done", use_container_width=True):
                 cons_no = str(record.get("CONS_NO", f"Row{st.session_state.current_index+1}"))
@@ -122,7 +145,9 @@ if uploaded_excel:
                     st.session_state.skipped_records.remove(cons_no)
                 save_log_to_memory(cons_no, "DONE")
                 st.session_state.current_index += 1
+                jump_to_next_unprocessed()
                 st.rerun()
+
         with col3:
             skip_reason = st.text_input("Reason (for Skip):", key=f"skip_reason_{st.session_state.current_index}")
             if st.button("⏭ Skip Record", use_container_width=True):
@@ -135,6 +160,7 @@ if uploaded_excel:
                         st.session_state.done_records.remove(cons_no)
                     save_log_to_memory(cons_no, "SKIPPED", skip_reason)
                     st.session_state.current_index += 1
+                    jump_to_next_unprocessed()
                     st.rerun()
 
         st.markdown("---")
