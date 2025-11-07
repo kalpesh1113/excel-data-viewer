@@ -1,11 +1,10 @@
 import streamlit as st
 import pandas as pd
-import os
 from datetime import datetime
 
 st.set_page_config(page_title="Excel Data Viewer", layout="wide")
 
-st.title("📘 Excel Data Viewer (Online with Log Resume)")
+st.title("📘 Excel Data Viewer (Online with Auto Resume)")
 st.markdown("Upload Excel, mark each record ✅ Done or ⏭ Skip with reason. You can pause anytime and later resume from log.")
 st.markdown("---")
 
@@ -69,7 +68,8 @@ if uploaded_excel:
                     st.session_state.skipped_records.add(cons)
             st.session_state.log_data = log_df.to_dict("records")
             st.success("✅ Progress resumed from uploaded log file.")
-        # Jump to next unprocessed record automatically
+
+        # ✅ Auto jump to first unprocessed record
         st.session_state.current_index = 0
         jump_to_next_unprocessed()
 
@@ -91,8 +91,10 @@ if uploaded_excel:
             mime="text/csv"
         )
     else:
+        # Current record number based on actual progress
+        record_no = st.session_state.current_index + 1
         record = df.iloc[st.session_state.current_index]
-        st.subheader(f"🔹 Record {st.session_state.current_index + 1} / {len(df)}")
+        st.subheader(f"🔹 Record {record_no} / {len(df)}")
 
         headers = record.index.tolist()
         values = record.values.tolist()
