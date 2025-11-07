@@ -5,8 +5,8 @@ from datetime import datetime
 
 st.set_page_config(page_title="Excel Data Viewer", layout="wide")
 
-st.title("📘 Excel Data Viewer (Online)")
-st.markdown("Upload Excel, review each record, and mark as ✅ Done or ⏭ Skip with reason.")
+st.title("📘 Excel Data Viewer (Online with Log Resume)")
+st.markdown("Upload Excel, mark each record ✅ Done or ⏭ Skip with reason. You can pause anytime and later resume from log.")
 st.markdown("---")
 
 if "data" not in st.session_state:
@@ -18,7 +18,7 @@ if "data" not in st.session_state:
 
 
 def save_log_to_memory(cons_no, action, reason=None):
-    """Store log in session memory (export later)"""
+    """Store log in session memory"""
     log_entry = {
         "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "CONS_NO": cons_no,
@@ -38,11 +38,26 @@ def jump_to_next_unprocessed():
         st.session_state.current_index += 1
 
 
-uploaded_file = st.file_uploader("📂 Upload Excel File", type=["xlsx", "xls"])
+uploaded_excel = st.file_uploader("📂 Upload Excel File", type=["xlsx", "xls"])
+uploaded_log = st.file_uploader("🧾 (Optional) Upload Log File to Resume Progress", type=["csv", "txt"])
 
-if uploaded_file:
-    df = pd.read_excel(uploaded_file, dtype=str).fillna("")
+if uploaded_excel:
+    df = pd.read_excel(uploaded_excel, dtype=str).fillna("")
     st.session_state.data = df
+
+    # Resume from log if provided
+    if uploaded_log:
+        log_df = pd.read_csv(uploaded_log) if uploaded_log.name.endswith(".csv") else None
+        if log_df is not None and "CONS_NO" in log_df.columns and "Action" in log_df.columns:
+            for _, row in log_df.iterrows():
+                cons = str(row["CONS_NO"])
+                act = row["Action"]
+                if act.startswith("DONE"):
+                    st.session_state.done_records.add(cons)
+                elif act.startswith("SKIPPED"):
+                    st.session_state.skipped_records.add(cons)
+            st.session_state.log_data = log_df.to_dict("records")
+            st.success("✅ Progress resumed from uploaded log file.")
 
     jump_to_next_unprocessed()
     df = st.session_state.data
@@ -55,10 +70,11 @@ if uploaded_file:
 
     if st.session_state.current_index >= len(df):
         st.success("🎉 Job Completed Successfully!")
+        csv_data = pd.DataFrame(st.session_state.log_data).to_csv(index=False)
         st.download_button(
             "📥 Download Log File",
-            data=pd.DataFrame(st.session_state.log_data).to_csv(index=False),
-            file_name=f"{uploaded_file.name}_log.csv",
+            data=csv_data,
+            file_name=f"{uploaded_excel.name}_log.csv",
             mime="text/csv"
         )
     else:
@@ -68,13 +84,27 @@ if uploaded_file:
         headers = record.index.tolist()
         values = record.values.tolist()
         group_size = 5
-        cols = st.columns(group_size * 2)
+        row = 0
 
+        # Display in styled 5-column grid
         for i in range(0, len(headers), group_size):
+            cols = st.columns(group_size * 2)
             for j in range(group_size):
                 if i + j < len(headers):
-                    cols[j * 2].markdown(f"**{headers[i + j]}**")
-                    cols[j * 2 + 1].markdown(f"<span style='font-weight:bold;color:black;'>{values[i + j]}</span>", unsafe_allow_html=True)
+                    header = str(headers[i + j])
+                    value = str(values[i + j])
+
+                    # First 2 rows highlight
+                    if row < 2:
+                        header_html = f"<div style='background-color:#FFD54F;padding:6px;border:1px solid gray;font-weight:bold;color:black;'>{header}</div>"
+                        value_html = f"<div style='background-color:#FFF9C4;padding:6px;border:1px solid gray;font-weight:bold;color:black;'>{value}</div>"
+                    else:
+                        header_html = f"<div style='background-color:#2F4F4F;padding:6px;border:1px solid black;color:white;font-weight:bold;'>{header}</div>"
+                        value_html = f"<div style='background-color:#C0C0C0;padding:6px;border:1px solid black;font-weight:bold;color:black;'>{value}</div>"
+
+                    cols[j * 2].markdown(header_html, unsafe_allow_html=True)
+                    cols[j * 2 + 1].markdown(value_html, unsafe_allow_html=True)
+            row += 1
 
         st.markdown("---")
         col1, col2, col3 = st.columns(3)
@@ -106,3 +136,13 @@ if uploaded_file:
                     save_log_to_memory(cons_no, "SKIPPED", skip_reason)
                     st.session_state.current_index += 1
                     st.rerun()
+
+        st.markdown("---")
+        # Download log anytime
+        csv_data = pd.DataFrame(st.session_state.log_data).to_csv(index=False)
+        st.download_button(
+            "💾 Download Current Progress (Log File)",
+            data=csv_data,
+            file_name=f"{uploaded_excel.name}_progress_log.csv",
+            mime="text/csv"
+        )
