@@ -9,6 +9,7 @@ st.title("📘 Excel Data Viewer (Online with Log Resume)")
 st.markdown("Upload Excel, mark each record ✅ Done or ⏭ Skip with reason. You can pause anytime and later resume from log.")
 st.markdown("---")
 
+# Initialize session state
 if "data" not in st.session_state:
     st.session_state.data = None
     st.session_state.current_index = 0
@@ -38,15 +39,22 @@ def jump_to_next_unprocessed():
         st.session_state.current_index += 1
 
 
+def jump_to_previous_unprocessed():
+    """Move pointer to previous unprocessed record"""
+    data = st.session_state.data
+    while st.session_state.current_index > 0:
+        st.session_state.current_index -= 1
+        cons_no = str(data.iloc[st.session_state.current_index].get("CONS_NO", f"Row{st.session_state.current_index+1}"))
+        if cons_no not in st.session_state.done_records and cons_no not in st.session_state.skipped_records:
+            break
+
+
 uploaded_excel = st.file_uploader("📂 Upload Excel File", type=["xlsx", "xls"])
 uploaded_log = st.file_uploader("🧾 (Optional) Upload Log File to Resume Progress", type=["csv", "txt"])
 
 if uploaded_excel:
     df = pd.read_excel(uploaded_excel, dtype=str).fillna("")
     st.session_state.data = df
-
-    # Reset index each time new Excel uploaded
-    st.session_state.current_index = 0
 
     # Resume from log if provided
     if uploaded_log:
@@ -60,19 +68,10 @@ if uploaded_excel:
                 elif act.startswith("SKIPPED"):
                     st.session_state.skipped_records.add(cons)
             st.session_state.log_data = log_df.to_dict("records")
-
-            # ✅ Set pointer to next unprocessed record automatically
-            st.session_state.current_index = 0
-            jump_to_next_unprocessed()
-            st.success("✅ Progress resumed from uploaded log file. Continuing from next unprocessed record.")
-        else:
-            st.warning("⚠️ Invalid log file format. Could not resume progress.")
-    else:
-        # Start fresh if no log
-        st.session_state.done_records.clear()
-        st.session_state.skipped_records.clear()
-        st.session_state.log_data = []
+            st.success("✅ Progress resumed from uploaded log file.")
+        # Jump to next unprocessed record automatically
         st.session_state.current_index = 0
+        jump_to_next_unprocessed()
 
     df = st.session_state.data
     total = len(df)
@@ -82,8 +81,6 @@ if uploaded_excel:
     st.markdown(f"### Summary: Total {total} | ✅ Done {done} | ⏭ Skipped {skipped}")
     st.markdown("---")
 
-    # Completion check
-    jump_to_next_unprocessed()
     if st.session_state.current_index >= len(df):
         st.success("🎉 Job Completed Successfully!")
         csv_data = pd.DataFrame(st.session_state.log_data).to_csv(index=False)
@@ -102,7 +99,7 @@ if uploaded_excel:
         group_size = 5
         row = 0
 
-        # Display in styled 5-column grid
+        # Display in styled 5-column grid (bold + colored like PyQt)
         for i in range(0, len(headers), group_size):
             cols = st.columns(group_size * 2)
             for j in range(group_size):
@@ -110,8 +107,7 @@ if uploaded_excel:
                     header = str(headers[i + j])
                     value = str(values[i + j])
 
-                    # First 2 rows highlight
-                    if row < 2:
+                    if row < 2:  # highlight first 2 rows
                         header_html = f"<div style='background-color:#FFD54F;padding:6px;border:1px solid gray;font-weight:bold;color:black;'>{header}</div>"
                         value_html = f"<div style='background-color:#FFF9C4;padding:6px;border:1px solid gray;font-weight:bold;color:black;'>{value}</div>"
                     else:
@@ -127,15 +123,8 @@ if uploaded_excel:
 
         with col1:
             if st.button("⬅ Previous Record", use_container_width=True):
-                if st.session_state.current_index > 0:
-                    st.session_state.current_index -= 1
-                    # jump to previous visible (unprocessed) record
-                    while st.session_state.current_index > 0:
-                        cons_no = str(df.iloc[st.session_state.current_index].get("CONS_NO", f"Row{st.session_state.current_index+1}"))
-                        if cons_no not in st.session_state.done_records and cons_no not in st.session_state.skipped_records:
-                            break
-                        st.session_state.current_index -= 1
-                    st.rerun()
+                jump_to_previous_unprocessed()
+                st.rerun()
 
         with col2:
             if st.button("✅ Mark as Done", use_container_width=True):
@@ -164,7 +153,6 @@ if uploaded_excel:
                     st.rerun()
 
         st.markdown("---")
-        # Download log anytime
         csv_data = pd.DataFrame(st.session_state.log_data).to_csv(index=False)
         st.download_button(
             "💾 Download Current Progress (Log File)",
